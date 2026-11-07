@@ -1,0 +1,2 @@
+遊戲內使用的 Kenney 素材來自 New Platformer Pack、Foliage Pack 與 Particle Pack，依 CC0 1.0 公眾領域授權提供。
+官方來源：https://kenney.nl/assets/new-platformer-pack 、https://kenney.nl/assets/foliage-pack 、https://kenney.nl/assets/particle-pack

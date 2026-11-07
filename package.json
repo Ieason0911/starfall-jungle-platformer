@@ -1,0 +1,16 @@
+{
+  "dependencies": {
+    "phaser": "^4.2.1"
+  },
+  "name": "starfall-jungle-platformer",
+  "version": "1.0.0",
+  "private": true,
+  "devDependencies": {
+    "vite": "^8.3.6"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  }
+}
