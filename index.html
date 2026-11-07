@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#100c25">
+  <title>星象防詐牌局｜一場看穿騙局的試煉</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      display: grid;
+      place-items: center;
+      background: radial-gradient(ellipse at 50% 10%, #302451 0%, #19132f 42%, #0b0919 100%);
+      color: #f4edff;
+      font-family: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", sans-serif;
+    }
+    #frame {
+      width: min(100vw, 1280px);
+      height: min(100dvh, 860px);
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      position: relative;
+    }
+    #game { width: 100%; height: 100%; }
+    #game canvas { display: block; }
+    #load-error {
+      position: absolute; inset: 20px; display: none; place-items: center; text-align: center;
+      padding: 24px; border: 1px solid #76659a; border-radius: 22px; background: #17112b;
+      font-size: 18px; line-height: 1.8; color: #f5eaff;
+    }
+    @media (max-width: 640px) {
+      #frame { width: 100vw; height: 100dvh; }
+    }
+  </style>
+</head>
+<body>
+  <main id="frame" aria-label="星象防詐牌局">
+    <div id="game"></div>
+    <div id="load-error">遊戲引擎載入失敗，請確認網路連線後重新整理頁面。</div>
+  </main>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.90.0/phaser.min.js" onerror="document.getElementById('load-error').style.display='grid'"></script>
+  <script>
+  (() => {
+    if (!window.Phaser) {
+      document.getElementById('load-error').style.display = 'grid';
+      return;
+    }
+
+    const QUESTIONS = [
+      {
+        title: '包裹逾期，請立即補繳',
+        story: '你收到簡訊，說包裹地址錯誤、即將退回，附上一個補繳小額運費的連結。',
+        explain: '物流通知請回到官方 App 或官網查件；簡訊連結與小額付款要求都要先查證。',
+        options: [
+          { text: '開啟物流官方 App，輸入託運編號查詢', kind: 'correct' },
+          { text: '點簡訊連結，輸入信用卡資料補運費', kind: 'wrong' },
+          { text: '把收到的驗證碼回覆給寄件人', kind: 'wrong' },
+          { text: '先不理會，找時間向家人說說這件事', kind: 'neutral' },
+          { text: '依簡訊指示轉帳到指定帳戶', kind: 'wrong' }
+        ]
+      },
+      {
+        title: '銀行來電：帳戶即將凍結',
+        story: '來電者自稱銀行客服，要求你提供簡訊驗證碼，才能取消一筆可疑交易。',
+        explain: '銀行不會索取網銀密碼或簡訊驗證碼。先掛斷，再自行撥打卡片或官網上的官方電話。',
+        options: [
+          { text: '提供驗證碼，請客服幫忙取消交易', kind: 'wrong' },
+          { text: '掛斷電話，撥打卡片背面的官方電話', kind: 'correct' },
+          { text: '請對方傳員工證照片來確認身分', kind: 'neutral' },
+          { text: '安裝對方指定的遠端操作 App', kind: 'wrong' },
+          { text: '先查看自己的帳戶明細，再請朋友一起判斷', kind: 'neutral' }
+        ]
+      },
+      {
+        title: '保證獲利的投資群組',
+        story: '網友邀你加入投資群，宣稱名師帶單、穩賺不賠，現在匯款就能拿到內線標的。',
+        explain: '「保證獲利」是重要警訊。投資前應查核業者是否合法，切勿把錢匯入陌生個人帳戶。',
+        options: [
+          { text: '借錢加碼，趁名額還在趕快投入', kind: 'wrong' },
+          { text: '查詢主管機關的合法業者名單，再自行研究', kind: 'correct' },
+          { text: '先退出群組，暫時不做任何投資決定', kind: 'neutral' },
+          { text: '先匯一小筆到老師提供的保管帳戶測試', kind: 'wrong' },
+          { text: '請朋友推薦平常使用的記帳工具', kind: 'neutral' }
+        ]
+      },
+      {
+        title: '親友急需用錢',
+        story: '陌生帳號傳訊息，自稱是你的家人，說手機壞了，請你匯款到一個新的帳戶。',
+        explain: '用你原本保存的電話或視訊聯絡親友確認；換帳號、換電話、催促匯款都要停下來查證。',
+        options: [
+          { text: '打原本存下的電話，或視訊確認本人', kind: 'correct' },
+          { text: '先問另一位家人是否也收到相同訊息', kind: 'neutral' },
+          { text: '照對方說的帳號先匯一半救急', kind: 'wrong' },
+          { text: '傳身分證和提款卡照片證明是家人', kind: 'wrong' },
+          { text: '先停下來，等確認清楚再處理', kind: 'neutral' }
+        ]
+      },
+      {
+        title: '高薪居家兼職，要先繳費',
+        story: '社群貼文徵求按讚小幫手，承諾日薪數千元，但要求先付保證金才能接第一筆任務。',
+        explain: '正當工作不會要求先付保證金或代墊款。查清公司資料，也不要出借帳戶代收款項。',
+        options: [
+          { text: '先付一筆小額保證金，看看是否真的有薪水', kind: 'wrong' },
+          { text: '把自己的帳戶借給公司收款', kind: 'wrong' },
+          { text: '拒絕預付費用，查核公司登記與聯絡資訊', kind: 'correct' },
+          { text: '不確定時先不應徵，和朋友討論看看', kind: 'neutral' },
+          { text: '請對方用官方公司信箱提供職務說明', kind: 'neutral' }
+        ]
+      },
+      {
+        title: '網購退款，請下載專用 App',
+        story: '賣家說訂單付款異常，要你離開購物平台，下載退款 App 並依指示操作網銀。',
+        explain: '退款應在原購物平台或官方客服流程處理。不要安裝陌生 App，也別依指示操作網銀。',
+        options: [
+          { text: '從訂單頁面聯絡平台官方客服詢問', kind: 'correct' },
+          { text: '點對方傳來的網址，登入網路銀行', kind: 'wrong' },
+          { text: '下載 App 並開啟螢幕分享，讓客服協助', kind: 'wrong' },
+          { text: '保留對話與訂單畫面，先暫停操作', kind: 'neutral' },
+          { text: '回到平台訂單頁查看原本的付款狀態', kind: 'neutral' }
+        ]
+      },
+      {
+        title: '電腦跳出中毒警告',
+        story: '瀏覽網頁時突然跳出警告視窗，要求立刻致電客服，並購買點數卡解除病毒。',
+        explain: '網頁彈窗不是可靠的安全警告。關閉頁面、使用可信的安全工具，必要時找官方技術支援。',
+        options: [
+          { text: '打彈窗電話，依客服要求買點數卡', kind: 'wrong' },
+          { text: '允許遠端控制，請對方幫忙清毒', kind: 'wrong' },
+          { text: '先關閉網頁，再用可信的安全工具檢查', kind: 'correct' },
+          { text: '重開瀏覽器並觀察是否還有警告', kind: 'neutral' },
+          { text: '用另一台裝置查詢品牌官方支援方式', kind: 'neutral' }
+        ]
+      },
+      {
+        title: '二手交易：點連結才能收款',
+        story: '買家表示已付款，傳來一個「認證收款」連結，請你登入銀行帳戶完成驗證。',
+        explain: '交易與收付款都留在原平台，勿透過陌生連結登入銀行，也不要提供一次性驗證碼。',
+        options: [
+          { text: '照連結登入銀行，確認款項已入帳', kind: 'wrong' },
+          { text: '要求對方傳銀行轉帳截圖作為證明', kind: 'neutral' },
+          { text: '只在原平台查看付款狀態並完成交易', kind: 'correct' },
+          { text: '先暫停交易，透過平台客服查證', kind: 'neutral' },
+          { text: '提供簡訊驗證碼，完成收款認證', kind: 'wrong' }
+        ]
+      },
+      {
+        title: '恭喜中獎，先付領獎稅金',
+        story: '你收到抽獎通知，對方說已抽中大獎，但要先轉一筆稅金或手續費才能領獎。',
+        explain: '中獎領獎不應要求先匯款到私人帳戶。請到主辦單位官網查詢活動規則與中獎公告。',
+        options: [
+          { text: '搜尋主辦單位官網，核對活動與中獎公告', kind: 'correct' },
+          { text: '匯出手續費，避免逾期失去獎品', kind: 'wrong' },
+          { text: '傳存摺和身分證照片，證明自己是得獎者', kind: 'wrong' },
+          { text: '暫不回覆，先向熟悉的親友詢問意見', kind: 'neutral' },
+          { text: '查找當初是否真的參加過這個活動', kind: 'neutral' }
+        ]
+      },
+      {
+        title: '自稱警方，要求匯款監管',
+        story: '來電者說你的帳戶涉案，要求保密配合偵查，把存款轉到「安全帳戶」監管。',
+        explain: '警方與檢察官不會要求民眾匯款監管帳戶。掛斷電話，透過官方管道聯絡警方查證。',
+        options: [
+          { text: '立即匯款到對方指定的安全帳戶', kind: 'wrong' },
+          { text: '掛斷電話，使用官方電話或親赴派出所查證', kind: 'correct' },
+          { text: '先記下對方姓名、單位與電話，稍後查證', kind: 'neutral' },
+          { text: '依指示加入線上偵訊，保持通話保密', kind: 'wrong' },
+          { text: '告訴信任的人，請對方陪你一起確認', kind: 'neutral' }
+        ]
+      },
+      {
+        title: '假公益募款，催你掃碼捐款',
+        story: '社群貼文正在為急難事件募款，附上私人帳戶與 QR Code，並提醒名額有限、請立刻捐。',
+        explain: '捐款前查證團體與募款專案，從官方網站進入捐款頁面，不要急著匯入私人帳戶。',
+        options: [
+          { text: '掃描 QR Code，輸入網銀資料完成捐款', kind: 'wrong' },
+          { text: '查核合法公益團體，從官網確認專案再捐款', kind: 'correct' },
+          { text: '先不捐，獨立查找事件與募款單位資訊', kind: 'neutral' },
+          { text: '轉傳貼文請大家幫忙，之後再確認真偽', kind: 'neutral' },
+          { text: '匯款到貼文留下的私人帳戶', kind: 'wrong' }
+        ]
+      }
+    ];
+
+    const COLORS = {
+      ink: 0x130f27, panel: 0x211936, panel2: 0x2b2142,
+      gold: 0xf4c879, cream: 0xf6edda, lilac: 0xb9a8ed,
+      mint: 0x8fd6c5, coral: 0xf08c86, muted: 0xb9b0cb
+    };
+    const FONT = '"Noto Sans TC", "Microsoft JhengHei", "PingFang TC", sans-serif';
+
+    class OracleTable extends Phaser.Scene {
+      constructor() { super('OracleTable'); }
+
+      create() {
+        this.score = 0;
+        this.questionIndex = 0;
+        this.deck = [];
+        this.mode = 'intro';
+        this.drawBackdrop();
+        this.ui = this.add.container(0, 0);
+        this.renderIntro();
+      }
+
+      drawBackdrop() {
+        const g = this.add.graphics();
+        g.fillStyle(0x100c25, 1).fillRect(0, 0, 1280, 860);
+        g.fillStyle(0x382652, 0.25).fillCircle(1030, 110, 340);
+        g.fillStyle(0x183d4c, 0.14).fillCircle(155, 730, 290);
+        g.lineStyle(1, 0x8c77b3, 0.19);
+        [180, 212, 244].forEach(r => g.strokeCircle(1100, 420, r));
+        [112, 146, 180].forEach(r => g.strokeCircle(82, 610, r));
+        for (let i = 0; i < 24; i++) {
+          const angle = i * Math.PI / 12;
+          const x1 = 1100 + Math.cos(angle) * 176;
+          const y1 = 420 + Math.sin(angle) * 176;
+          const x2 = 1100 + Math.cos(angle) * 244;
+          const y2 = 420 + Math.sin(angle) * 244;
+          g.lineStyle(i % 2 === 0 ? 2 : 1, 0xd4bcff, 0.25).lineBetween(x1, y1, x2, y2);
+        }
+        // Tiny zodiac-like stars and orbit dots around the felt table.
+        for (let i = 0; i < 88; i++) {
+          const x = (i * 173 + 43) % 1280;
+          const y = (i * 97 + 29) % 860;
+          const r = i % 9 === 0 ? 2.2 : (i % 3 === 0 ? 1.35 : 0.8);
+          g.fillStyle(i % 7 === 0 ? 0xf4c879 : 0xd3c9ef, i % 7 === 0 ? 0.72 : 0.4);
+          g.fillCircle(x, y, r);
+        }
+        // Fine constellation lines.
+        g.lineStyle(1, 0xd2c6ed, 0.11);
+        [[70,115,136,148],[136,148,191,119],[191,119,235,175],[1010,80,1065,122],[1065,122,1121,93],[1121,93,1168,145],[105,725,151,690],[151,690,194,739]].forEach(p => g.lineBetween(...p));
+        this.add.text(1072, 386, '✦', { fontFamily: FONT, fontSize: '27px', color: '#f4c879' }).setAlpha(0.72);
+        this.add.text(29, 573, '✧', { fontFamily: FONT, fontSize: '22px', color: '#b9a8ed' }).setAlpha(0.7);
+      }
+
+      clearUI() {
+        this.ui.removeAll(true);
+      }
+
+      addText(text, x, y, style = {}) {
+        const node = this.add.text(x, y, text, {
+          fontFamily: FONT, color: '#f6edda', fontSize: '20px',
+          ...style
+        });
+        this.ui.add(node);
+        return node;
+      }
+
+      panel(x, y, w, h, fill = 0x211936, stroke = 0x705e92, alpha = 0.95) {
+        const g = this.add.graphics();
+        g.fillStyle(fill, alpha).fillRoundedRect(x, y, w, h, 22);
+        g.lineStyle(1.5, stroke, 0.66).strokeRoundedRect(x, y, w, h, 22);
+        this.ui.add(g);
+        return g;
+      }
+
+      addHeader(showHud = false) {
+        this.addText('✦  午夜牌局・防詐考驗', 58, 31, { fontSize: '15px', color: '#d2c4ee', letterSpacing: 2 });
+        this.addText('星象防詐牌局', 58, 53, { fontSize: '30px', color: '#fff5df', fontStyle: 'bold' });
+        this.addText('THE ORACLE’S TABLE', 60, 93, { fontSize: '11px', color: '#a89abd', letterSpacing: 2 });
+        if (showHud) {
+          this.panel(968, 38, 252, 70, 0x241d38, 0x766291, 0.9);
+          this.addText(`第 ${String(Math.min(this.questionIndex + 1, 11)).padStart(2, '0')} / 11 題`, 990, 51, { fontSize: '16px', color: '#d9ccee' });
+          this.addText(`✦  ${this.score} 分`, 1092, 48, { fontSize: '24px', color: '#f4c879', fontStyle: 'bold' });
+        } else {
+          this.addText('辨識詐騙・選擇安全應對', 978, 64, { fontSize: '16px', color: '#d2c4ee' });
+        }
+      }
+
+      button(label, x, y, w, h, callback, accent = 0x8061ad) {
+        const bg = this.add.rectangle(x, y, w, h, accent, 1).setStrokeStyle(1.5, 0xf4c879, 0.85);
+        bg.setInteractive({ useHandCursor: true });
+        this.ui.add(bg);
+        const text = this.add.text(x, y, label, {
+          fontFamily: FONT, fontSize: '20px', color: '#fff7e8', fontStyle: 'bold'
+        }).setOrigin(0.5);
+        this.ui.add(text);
+        bg.on('pointerover', () => { bg.setFillStyle(0xa27bca, 1); });
+        bg.on('pointerout', () => { bg.setFillStyle(accent, 1); });
+        bg.on('pointerdown', callback);
+      }
+
+      renderIntro() {
+        this.mode = 'intro';
+        this.clearUI();
+        this.addHeader(false);
+        this.panel(58, 157, 1164, 647, 0x1b1530, 0x766291, 0.96);
+        this.addText('準備好看穿眼前的騙局了嗎？', 108, 220, { fontSize: '37px', color: '#fff5df', fontStyle: 'bold' });
+        this.addText('荷官發出一張情境卡，從手牌中選出最安全的應對。', 110, 277, {
+          fontSize: '19px', color: '#d5cce4', wordWrap: { width: 635 }
+        });
+
+        const ruleY = [377, 439, 501];
+        const rules = [
+          ['+6', '選到正確應對', 0x8fd6c5],
+          ['0', '選到較無關的做法', 0xf4c879],
+          ['−2', '選到錯誤做法（最低 0 分）', 0xf08c86]
+        ];
+        rules.forEach((item, i) => {
+          const [mark, label, color] = item;
+          this.addText(mark, 112, ruleY[i], { fontSize: '26px', color: Phaser.Display.Color.IntegerToColor(color).rgba, fontStyle: 'bold' });
+          this.addText(label, 177, ruleY[i] + 3, { fontSize: '19px', color: '#e8def3' });
+        });
+        this.addText('累積 30 分立即通關；最多挑戰 11 題。', 112, 568, { fontSize: '16px', color: '#bcb0d0' });
+
+        // A small illustrated tarot spread; all art is drawn with Phaser shapes.
+        const tarot = this.add.container(928, 411);
+        const makeTarot = (x, y, angle, border, glyph) => {
+          const c = this.add.container(x, y).setAngle(angle);
+          const card = this.add.graphics();
+          card.fillStyle(0x211936, 1).fillRoundedRect(-75, -116, 150, 232, 14);
+          card.lineStyle(2, border, 0.95).strokeRoundedRect(-75, -116, 150, 232, 14);
+          card.lineStyle(1, border, 0.5).strokeCircle(0, -9, 43);
+          card.lineBetween(-50, -82, 50, -82);
+          card.lineBetween(-50, 70, 50, 70);
+          c.add(card);
+          c.add(this.add.text(0, -8, glyph, { fontFamily: FONT, fontSize: '48px', color: Phaser.Display.Color.IntegerToColor(border).rgba }).setOrigin(0.5));
+          c.add(this.add.text(0, 94, '✧  ✦  ✧', { fontFamily: FONT, fontSize: '15px', color: '#d8c5f0' }).setOrigin(0.5));
+          tarot.add(c);
+        };
+        makeTarot(-67, 8, -13, 0x8fd6c5, '☽');
+        makeTarot(69, -1, 13, 0xf4c879, '✦');
+        makeTarot(0, -10, 0, 0xd0b5f4, '☉');
+        this.ui.add(tarot);
+        this.addText('直覺可以提醒你，查證才能保護你。', 773, 556, { fontSize: '15px', color: '#c6bad7', align: 'center' });
+
+        this.button('開始試煉  ✦', 640, 681, 248, 60, () => this.startGame(), 0x7657a7);
+        this.addText('每題選一張牌，讀完回饋後繼續下一題。', 640, 736, { fontSize: '14px', color: '#a99dbb' }).setOrigin(0.5, 0);
+      }
+
+      startGame() {
+        this.score = 0;
+        this.questionIndex = 0;
+        this.deck = Phaser.Utils.Array.Shuffle(QUESTIONS.map(q => ({ ...q, options: Phaser.Utils.Array.Shuffle(q.options.map(o => ({ ...o }))) })));
+        this.mode = 'playing';
+        this.renderGame(true);
+      }
+
+      makeResponseCard(option, index, x, y, w, h) {
+        const card = this.add.container(x, y);
+        const g = this.add.graphics();
+        const accent = [0x8fd6c5, 0xf4c879, 0xb9a8ed, 0xf09b86, 0x91b9de][index];
+        g.fillStyle(0x241d38, 1).fillRoundedRect(0, 0, w, h, 15);
+        g.lineStyle(1.4, 0x74658e, 0.95).strokeRoundedRect(0, 0, w, h, 15);
+        g.fillStyle(accent, 0.96).fillRoundedRect(0, 0, w, 8, { tl: 15, tr: 15, bl: 0, br: 0 });
+        g.fillStyle(0x3b3153, 0.8).fillCircle(w - 25, 29, 12);
+        card.add(g);
+        card.add(this.add.text(17, 20, `手牌 0${index + 1}`, { fontFamily: FONT, fontSize: '13px', color: '#c9bfd9' }));
+        card.add(this.add.text(w - 25, 29, '✦', { fontFamily: FONT, fontSize: '13px', color: Phaser.Display.Color.IntegerToColor(accent).rgba }).setOrigin(0.5));
+        const response = this.add.text(w / 2, h / 2 + 8, option.text, {
+          fontFamily: FONT, fontSize: '19px', color: '#fff5e6', align: 'center',
+          lineSpacing: 5, wordWrap: { width: w - 30, useAdvancedWrap: true }
+        }).setOrigin(0.5);
+        card.add(response);
+        card.setSize(w, h);
+        card.setInteractive(new Phaser.Geom.Rectangle(0, 0, w, h), Phaser.Geom.Rectangle.Contains);
+        if (this.mode === 'playing') {
+          card.on('pointerover', () => this.tweens.add({ targets: card, y: y - 8, duration: 120, ease: 'Sine.Out' }));
+          card.on('pointerout', () => this.tweens.add({ targets: card, y, duration: 150, ease: 'Sine.Out' }));
+          card.on('pointerdown', () => this.chooseCard(index));
+        }
+        this.ui.add(card);
+        return { node: card, graphics: g, option };
+      }
+
+      renderGame(animate = false) {
+        this.clearUI();
+        this.mode = this.mode === 'feedback' ? 'feedback' : 'playing';
+        const q = this.deck[this.questionIndex];
+        this.addHeader(true);
+
+        this.panel(58, 143, 1164, 239, 0x211936, 0x766291, 0.96);
+        this.addText('荷官發出的情境卡', 91, 169, { fontSize: '14px', color: '#bfaee0', letterSpacing: 1.5 });
+        this.addText(q.title, 91, 198, { fontSize: '31px', color: '#fff2d8', fontStyle: 'bold', wordWrap: { width: 780 } });
+        this.addText(q.story, 93, 257, { fontSize: '20px', color: '#e1d8eb', lineSpacing: 6, wordWrap: { width: 775, useAdvancedWrap: true } });
+        this.drawDealerSeal(1057, 263);
+
+        if (this.mode === 'playing') {
+          this.addText('你的手牌', 66, 407, { fontSize: '19px', color: '#f4c879', fontStyle: 'bold' });
+          this.addText('想一想：哪個做法最能保護你的錢與個人資料？', 195, 410, { fontSize: '15px', color: '#c7bbd7' });
+        } else {
+          this.panel(58, 394, 1164, 65, 0x25203a, this.feedback.kind === 'correct' ? 0x8fd6c5 : this.feedback.kind === 'wrong' ? 0xf08c86 : 0xf4c879, 0.98);
+          this.addText(this.feedback.headline, 81, 402, {
+            fontSize: '18px', color: this.feedback.kind === 'correct' ? '#9fe5d3' : this.feedback.kind === 'wrong' ? '#ffaaa1' : '#f6d78e', fontStyle: 'bold'
+          });
+          this.addText(q.explain, 81, 429, { fontSize: '14px', color: '#e1d8eb', wordWrap: { width: 1080 } });
+          this.addText('你的手牌', 66, 466, { fontSize: '17px', color: '#f4c879', fontStyle: 'bold' });
+        }
+
+        const gap = 18;
+        const cardW = 218;
+        const cardH = 236;
+        const startX = 57;
+        const y = this.mode === 'playing' ? 455 : 501;
+        this.responseCards = q.options.map((option, i) => {
+          const x = startX + i * (cardW + gap);
+          const item = this.makeResponseCard(option, i, x, y, cardW, cardH);
+          if (this.mode === 'feedback') {
+            item.node.disableInteractive();
+            if (i === this.selectedCardIndex) {
+              const border = option.kind === 'correct' ? 0x8fd6c5 : option.kind === 'wrong' ? 0xf08c86 : 0xf4c879;
+              item.graphics.lineStyle(3, border, 1).strokeRoundedRect(2, 2, cardW - 4, cardH - 4, 14);
+              item.node.setY(y - 8).setScale(1.015);
+            } else {
+              item.node.setAlpha(0.76);
+            }
+          } else if (animate) {
+            item.node.setY(y + 24).setAlpha(0).setScale(0.92);
+            this.tweens.add({ targets: item.node, y, alpha: 1, scale: 1, duration: 340, delay: 55 * i, ease: 'Back.Out' });
+          }
+          return item;
+        });
+
+        if (this.mode === 'feedback') {
+          const nextIsWin = this.score >= 30;
+          const nextIsLoss = this.questionIndex >= 10;
+          const label = nextIsWin ? '查看試煉結果  ✦' : nextIsLoss ? '查看試煉結果  ✦' : '收回手牌・進入下一題  →';
+          this.button(label, 640, 789, 340, 48, () => this.advance(), 0x71549f);
+        } else {
+          this.addText('選好後點擊卡片出牌', 640, 733, { fontSize: '14px', color: '#a99dbb' }).setOrigin(0.5, 0);
+        }
+      }
+
+      drawDealerSeal(x, y) {
+        const g = this.add.graphics();
+        g.lineStyle(1.4, 0xf4c879, 0.68).strokeCircle(x, y, 62).strokeCircle(x, y, 48);
+        g.lineStyle(1, 0xc5a2e8, 0.58);
+        for (let i = 0; i < 8; i++) {
+          const a = i * Math.PI / 4;
+          g.lineBetween(x + Math.cos(a) * 48, y + Math.sin(a) * 48, x + Math.cos(a) * 60, y + Math.sin(a) * 60);
+        }
+        this.ui.add(g);
+        this.addText('☽', x, y - 28, { fontSize: '31px', color: '#f4c879' }).setOrigin(0.5);
+        this.addText('✦', x, y + 18, { fontSize: '23px', color: '#d8c6f1' }).setOrigin(0.5);
+        this.addText('THE DEALER', x, y + 78, { fontSize: '10px', color: '#c0b2d5', letterSpacing: 2 }).setOrigin(0.5);
+      }
+
+      chooseCard(index) {
+        if (this.mode !== 'playing') return;
+        const option = this.deck[this.questionIndex].options[index];
+        this.selectedCardIndex = index;
+        if (option.kind === 'correct') {
+          this.score += 6;
+          this.feedback = { kind: 'correct', headline: '判斷正確！  +6 分' };
+        } else if (option.kind === 'wrong') {
+          this.score = Math.max(0, this.score - 2);
+          this.feedback = { kind: 'wrong', headline: '這張牌有風險。  −2 分（分數最低為 0）' };
+        } else {
+          this.feedback = { kind: 'neutral', headline: '這個做法較無關，先不加分也不扣分。  +0 分' };
+        }
+        this.mode = 'feedback';
+        this.renderGame(false);
+        this.cameras.main.shake(100, option.kind === 'wrong' ? 0.002 : 0.0006);
+      }
+
+      advance() {
+        if (this.mode !== 'feedback') return;
+        if (this.score >= 30) {
+          this.renderEnd(true);
+        } else if (this.questionIndex >= 10) {
+          this.renderEnd(false);
+        } else {
+          this.questionIndex++;
+          this.mode = 'playing';
+          this.renderGame(true);
+        }
+      }
+
+      renderEnd(passed) {
+        this.mode = 'end';
+        this.clearUI();
+        this.addHeader(false);
+        this.panel(176, 176, 928, 570, 0x1b1530, 0x9079b4, 0.97);
+        this.drawDealerSeal(640, 322);
+        this.addText(passed ? '恭喜你通過考驗' : '再接再厲，防範詐騙你我他', 640, 426, {
+          fontSize: passed ? '38px' : '32px', color: passed ? '#9fe5d3' : '#f6d78e', fontStyle: 'bold', align: 'center'
+        }).setOrigin(0.5, 0);
+        this.addText(`最終分數　${this.score} 分`, 640, 493, { fontSize: '23px', color: '#fff2d8', align: 'center' }).setOrigin(0.5, 0);
+        this.addText(passed ? '看見可疑訊息時，停一下、查證一下，就是很好的第一步。' : '多一分查證，就少一分風險。再試一次，累積你的防詐直覺。', 640, 544, {
+          fontSize: '17px', color: '#d4cadd', align: 'center', wordWrap: { width: 760 }
+        }).setOrigin(0.5, 0);
+        this.button('再玩一次  ↻', 640, 666, 230, 56, () => this.renderIntro(), 0x7657a7);
+      }
+    }
+
+    new Phaser.Game({
+      type: Phaser.AUTO,
+      parent: 'game',
+      width: 1280,
+      height: 860,
+      backgroundColor: '#100c25',
+      scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+      render: { antialias: true, roundPixels: true },
+      scene: [OracleTable]
+    });
+  })();
+  </script>
+</body>
+</html>
